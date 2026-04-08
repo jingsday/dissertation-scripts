@@ -9,19 +9,19 @@ It includes all scripts for data preprocessing, analysis, and visualisation for 
 
 This folder is organised into two main components: **single-cell analysis** and **bulk RNA-seq analysis**.
 
-### Single-cell analysis (`phd_chapter_sc`)
-- `prep/` – Data cleaning and integration steps  
+### Single-cell analysis (`phd_chapter3_sc`)
+- `prep` – Data cleaning and integration steps  
 - `scenic_*` – Regulon enrichment analysis:  
   - One script runs the SCENIC pipeline  
   - One script performs downstream analysis  
-- `degs/` – Differentially expressed gene (DEG) analysis  
+- `degs` – Differentially expressed gene (DEG) analysis  
 - `fig_*` – Scripts for generating main figures (e.g., Figure 1, Figure 2)  
-- `liana/` – Ligand–receptor interaction analysis, including deeper exploration modules  
+- `liana` – Ligand–receptor interaction analysis, including deeper exploration modules  
 
-### Bulk RNA-seq analysis (`phd_chapter_survival`)
+### Bulk RNA-seq analysis (`phd_chapter3_survival`)
 - `ols_R_final.Rmd` – Integration of cohort data and Kaplan–Meier survival analysis (including supplementary figures)  
-- `ol_specificity/` – Testing specificity of derived signatures  
-- `momf/` – Inferring oligodendrocyte composition in bulk data using single-cell-derived signatures  
+- `ol_specificity` – Testing specificity of derived signatures  
+- `momf` – Inferring oligodendrocyte composition in bulk data using single-cell-derived signatures  
 
 ---
 
@@ -31,8 +31,6 @@ This folder contains two main subfolders:
 
 - `models/` – Scripts for modelling; each script is named according to its function  
 - `plots/` – Visualisation scripts  
-- `input/` – Data input and initial preprocessing (including cleaning steps)  
-
 ---
 
 ## Notes
