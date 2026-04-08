@@ -1,0 +1,378 @@
+---
+title: "seasonality_input"
+author: "Jing"
+date: "2025-04-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r source and final columns}
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_DATA/'
+#Jing's mac
+Pond <- read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_PondCharacteristics_20240607.csv'))
+id <-  read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_PondID_20240124.csv'))
+LU5 <- read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_LandUse_5m_20240516.csv'), header=T, sep = ",")
+
+LU <- read.csv(paste0(data_dir,'LU_current.csv'), header=T, sep = ",")
+LC <- read.csv(paste0(data_dir,'LandCover_selectedradii.csv'), header=T, sep = ",")
+
+A <- read.csv(paste0(data_dir,'Animals.csv'), header=T, sep = ",")
+# Hetog100 <- read.csv(paste0(data_dir,'landscape_heterogeneity_100_allponds.csv'), header=T, sep = ",")
+# Hetog5 <- read.csv(paste0(data_dir,'landscape_heterogeneity_5_allponds.csv'), header=T, sep = ",")
+
+dom_landcover_nov <- read.csv(paste0(data_dir,'/ponderful_DATA_updated/PhyChe_XY_landcover_nov.txt'))
+dom_landcover_nov$PondCode <- toupper(dom_landcover_nov$PondCode)
+```
+
+```{r IDs}
+# Pond variables
+id <- id[,c("Pond_ID","PondCode","X","Y","Pondscape","Country","Strat_Survey","Resampling")]
+id$PondCode <- toupper(id$PondCode)
+
+id = id[id$Strat_Survey==1,]
+Pond <- Pond[,c("PondCode","AssessmentDate","Nat_res","Area","Depth","Pond_dries","Rel_waterlev","PVI","Area")]
+Pond$PondCode <- toupper(Pond$PondCode)
+
+Pond$AssessmentDate <- as.Date(Pond$AssessmentDate, format = "%d/%m/%Y")
+Pond$year <-substr(Pond$AssessmentDate, 1,4)
+```
+
+
+```{r PC:TN, TP,Sludge; mean per year per season}
+# Physicochemical variables: TN, TP
+PC <- read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_PhysicoChemistry_20240516.csv'))
+PC$PondCode <- toupper(PC$PondCode)
+
+
+PC[] <- lapply(PC, gsub, pattern='<', replacement='')
+PC$NOTES <- NULL
+PC$Notes..different.date.O2.spls.taken <- NULL
+PC <-PC[!is.na(PC$MeasurementDate),]
+PC[,-c(1:3)] <- sapply(PC[,-c(1:3)],as.numeric)
+PC$MeasurementDate <- as.Date(PC$MeasurementDate, format = "%d/%m/%Y")
+PC$year <- format(PC$MeasurementDate, "%Y")
+
+# PC <- merge(PC,Pond[,c("PondCode","AssessmentDate","Pond_dries")],all.x = T,by.x = c('PondCode', 'MeasurementDate'),
+#,     by.y=c('PondCode', 'AssessmentDate'))
+
+PC[!is.na(PC$TN) & PC$TN >= 10,]$TN <- NA
+#PC[!is.na(PC$CHLa_Spectro) & PC$CHLa_Spectro >= 800,]$CHLa_Spectro <- NA
+PC <- merge(PC, id[,c('PondCode','Pond_ID')],by = 'PondCode',all.x=T)
+
+#PC table seasons
+PCs=PC[!is.na(PC$TN),c("PondCode","Pond_ID","MeasurementDate","year","season_col",
+                       "Sludge","TN","TP" )]
+```
+
+```{r LU5m: natural 5}
+# Land use 5m (field data)
+LU5$PondCode <- toupper(LU5$PondCode)
+
+LU5$Natural_5 = LU5$Moorland + LU5$Rank_veg + LU5$Woodland + LU5$Marsh + LU5$Other
+LU5$AssessmentDate <- as.Date(LU5$AssessmentDate, format = "%d/%m/%Y")
+LU5$year <- format(LU5$AssessmentDate, "%Y")
+
+length(unique(LU5$PondCode))# 279 ponds once per year 
+#
+LU5unique <- LU5 %>%  group_by(PondCode,year) %>%
+  summarise(Natural_5 = mean(Natural_5, na.rm = TRUE), .groups = "drop")
+```
+
+
+```{r LU500m: model_df:+500m variables}
+LC <- read.csv(paste0(data_dir,'ponderful_DATA_updated/LandCover_selectedradii.csv'), header=T, sep = ",")
+LC$PondCode <- toupper(LC$PondCode)
+```
+
+
+```{r model_df:TN, TP, Depth, Area, Pond_dries,Sludge}
+model_df <- PCs[,c("PondCode","Pond_ID","MeasurementDate",
+                   "year","season_col","Sludge",
+                   "TN","TP")]
+
+
+model_df <-merge(model_df,LU5unique,on=c('PondCode','year'),all.x=T)
+#Other LU5 vars will be prep for annual mean not now 
+# model_df <-merge(model_df,LU5[,c("Unimp_grassland","Semimp_grassland",
+#                                  "Imp_grassland",
+#                               "Arable","Urban", "Rock","Marsh",
+#                               "Streams","Other")],on=c('PondCode','year'),all.x=T)
+
+
+#model_df <- merge(model_df,Pond[,c('PondCode','year','Depth','Pond_dries')],on=c('PondCode','year'),all.x=T)
+
+length(unique(model_df$PondCode))
+length(unique(model_df[is.na(model_df$Sludge),]$PondCode))
+model_df <- merge(model_df,LC[,c(4,6:10)],by="PondCode", all.x=T) 
+
+model_df <- merge(model_df,Pond[,c('PondCode', "year" ,'Area','Depth','Pond_dries')],by=c('PondCode','year'),all.x=T)
+```
+
+```{r}
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/'
+
+climatic <- read.csv(paste0(data_dir,'season_temp_prec.csv'))
+
+model_df <- merge(model_df, climatic[,c('Pond_ID',"year","season_col",'MeanT','sum_P')],
+      by = c('Pond_ID',"year","season_col"),all.x=T)
+```
+
+```{r livestock}
+length(unique(model_df[model_df$PondCode %in% dom_landcover_nov$PondCode,'PondCode']))#240
+
+model_df<- model_df[model_df$PondCode %in% dom_landcover_nov$PondCode,]
+#954 rows with 240 unique ponds with pondcode aligned with final model
+
+
+#Lifestock
+A$livestockQ=1
+A[A$lifestock == "Moderate",]$livestockQ<-2
+A[A$lifestock == "High",]$livestockQ<-3
+
+model_df <- merge(model_df,A[,c(1,2,5)],by=c("Pond_ID"))
+```
+
+```{r vegetation; model_df:+post_Emerse_pond}
+vegetation <- read.csv('/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/D2.4_PondCharacteristics_vegetation_post_Emerse_pond.csv',header=T, sep = ";")
+vegetation$PondCode <- toupper(vegetation$PondCode)
+
+
+length(unique(vegetation$PondCode))
+vegetation$AssessmentDate <- as.Date(vegetation$AssessmentDate, format = "%d/%m/%Y")
+vegetation$year <-format(vegetation$AssessmentDate, "%Y")
+
+
+model_df <-merge(model_df,vegetation[,c('PondCode','year','post_Emerse_pond')],on=c('PondCode','year'),all.x=T)
+```
+
+
+```{r}
+#populate natural 5
+model_df_nat5_filled <- model_df %>%
+  group_by(PondCode,year, season_col) %>% 
+  mutate(
+    natural_5_filled = ifelse(is.na(Natural_5), 
+                           ifelse(n_distinct(Natural_5[!is.na(Natural_5)]) == 1, unique(nature[!is.na(Natural_5)]), 
+                                  ifelse(n_distinct(Natural_5[!is.na(Natural_5)]) > 1, 
+                                         as.character(PondCode), NA)), 
+                           Natural_5)
+  ) %>%
+  ungroup() %>%
+  group_by(PondCode) %>%
+  mutate(
+    natural_5_filled = ifelse(is.na(natural_5_filled), 
+                           ifelse(n_distinct(natural_5_filled[!is.na(natural_5_filled)]) == 1, unique(natural_5_filled[!is.na(natural_5_filled)]), 
+                                  ifelse(n_distinct(natural_5_filled[!is.na(natural_5_filled)]) > 1, 
+                                         as.character(PondCode), NA)), 
+                           natural_5_filled)
+  ) %>%
+  ungroup()
+```
+
+```{r}
+model_df_nat5_filled[is.na(model_df_nat5_filled$Area),]
+cat(paste(unique(model_df_nat5_filled[is.na(model_df_nat5_filled$Area), 'PondCode']), collapse = ' '))
+
+colnames(model_df_nat5_filled)
+
+write.csv(model_df_nat5_filled, paste0(data_dir,'model_df_nat5_filled.csv'))
+```
+
+
+```{r Strata merging with same meeasurement date}
+hydro_strat <- read.csv('/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/env_all_stratification.csv')
+hydro_strat[hydro_strat$Season =='Fall',]$Season <-'Autumn'
+
+ref <- read.csv('/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/PONDERFUL_PondID_gas_work.csv')
+ref$PondCode <- toupper(ref$PondCode)
+
+hydro_strat_id <- merge(hydro_strat,ref[,c('PondCode','Pond_ID')],by='PondCode',all.x=T)
+table(is.na(hydro_strat_id$Pond_ID))#none
+
+
+model_df_nat5_filled_strat <- merge(model_df_nat5_filled, hydro_strat_id[,c('Pond_ID','Season','Date','Strat')],
+       by.x= c('Pond_ID','season_col','MeasurementDate'),
+       by.y = c('Pond_ID','Season','Date'),all.x=T)
+
+class(hydro_strat_id$Date)
+
+```
+
+```{r}
+library(dplyr)
+
+# Step 1: Reference data with known Strat
+known_strat <- model_df_nat5_filled_strat %>%
+  filter(!is.na(Strat)) %>%
+  select(PondCode, season_col, year, Strat)
+
+# Step 2: Rows with NA Strat
+missing_strat <- model_df_nat5_filled_strat %>%
+  filter(is.na(Strat)) #329 missing 
+
+# Step 3: Join and try to populate Strat from known data
+filled_strat <- missing_strat %>%
+  left_join(known_strat, by = c("PondCode", "season_col", "year"), suffix = c("", "_filled"))
+
+# Step 4: If multiple matches exist, select mode for each group (PondCode + season + year)
+filled_strat <- filled_strat %>%
+  group_by(PondCode, season_col, year) %>%
+  mutate(Strat_filled = if (all(is.na(Strat_filled))) {
+    NA
+  } else {
+    names(sort(table(Strat_filled), decreasing = TRUE))[1]
+  }) %>%
+  ungroup()
+
+
+# Step 5: Combine back into the original dataframe
+model_df_nat5_filled_strat_final <- model_df_nat5_filled_strat %>%
+  left_join(filled_strat %>% select(PondCode, season_col, year, MeasurementDate, Strat_filled),
+            by = c("PondCode", "season_col", "year", "MeasurementDate")) %>%
+  mutate(Strat = ifelse(is.na(Strat), Strat_filled, Strat)) %>%
+  select(-Strat_filled)
+
+model_df_nat5_filled_strat_final[is.na(model_df_nat5_filled_strat_final$Strat),]#210 missing
+```
+
+```{r}
+# Step 1: Remove the `Strat` column from remaining_na to avoid conflicts
+remaining_na_clean <- remaining_na %>% 
+  select(-Strat)  # Remove Strat column
+
+# Step 2: Convert year to integer and clean up the columns for join
+remaining_na_clean <- remaining_na_clean %>% 
+  mutate(year = as.integer(year))
+
+# Step 3: Get hydro_strat_id entries with non-NA Strat
+hydro_valid <- hydro_strat_id %>% 
+  filter(!is.na(Strat)) %>% 
+  select(Pond_ID, Season, Year, Strat)  # Use Pond_ID instead of PondCode
+
+# Step 4: Perform the left join with hydro_valid, now using Pond_ID
+remaining_na_with_strat <- remaining_na_clean %>% 
+  left_join(hydro_valid, 
+            by = c("Pond_ID" = "Pond_ID", 
+                   "season_col" = "Season", 
+                   "year" = "Year"))
+
+# Step 5: Calculate the match counts
+match_counts <- hydro_valid %>% 
+  group_by(Pond_ID, Season, Year) %>% 
+  summarise(n = n_distinct(Strat), .groups = "drop")
+
+# Step 6: Join the match counts to the NA rows
+remaining_na_with_strat <- remaining_na_with_strat %>% 
+  left_join(match_counts, 
+            by = c("Pond_ID" = "Pond_ID", 
+                   "season_col" = "Season", 
+                   "year" = "Year"))
+
+# Step 7: Only keep rows where there was exactly ONE match
+only_single_match <- remaining_na_with_strat %>% 
+  filter(n == 1)
+# Step 7: Only keep rows where there was exactly ONE match and drop duplicates
+only_single_match <- remaining_na_with_strat %>%
+  filter(n == 1) %>%
+  distinct(Pond_ID, season_col, year, MeasurementDate, .keep_all = TRUE)  # Drop duplicates based on key columns
+
+```
+```{r}
+# Step 8: Convert `year` to character in both dataframes to ensure consistency
+model_df_nat5_filled_strat_final <- model_df_nat5_filled_strat_final %>%
+  mutate(year = as.character(year))  # Convert to character
+
+only_single_match <- only_single_match %>%
+  mutate(year = as.character(year))  # Convert to character
+
+# Now perform the left join
+model_df_nat5_filled_strat_final <- model_df_nat5_filled_strat_final %>%
+  left_join(
+    only_single_match %>% 
+      select(Pond_ID, season_col, year, MeasurementDate, Strat_hydro = Strat), 
+    by = c("Pond_ID", "season_col", "year", "MeasurementDate")
+  ) %>%
+  mutate(Strat = ifelse(is.na(Strat), Strat_hydro, Strat)) %>%
+  select(-Strat_hydro)
+
+```
+
+```{r}
+unique(model_df_nat5_filled_strat_final[is.na(model_df_nat5_filled_strat_final$Strat),'PondCode'])
+model_df_nat5_filled_strat_final[is.na(model_df_nat5_filled_strat_final$Strat),]
+```
+
+```{r if multiple mode }
+# Step 1: Convert `year` to character type for consistency before joining
+model_df_nat5_filled_strat_final <- model_df_nat5_filled_strat_final %>%
+  mutate(year = as.character(year))  # Convert to character
+
+hydro_valid <- hydro_valid %>%
+  mutate(Year = as.character(Year))  # Convert to character in hydro_valid
+
+# Step 2: Filter out rows with NA in Strat
+rows_to_fill <- model_df_nat5_filled_strat_final[is.na(model_df_nat5_filled_strat_final$Strat),]
+
+# Step 3: Filter rows_to_fill where Pond_ID and season_col exist in hydro_valid
+rows_to_fill_valid <- rows_to_fill %>%   
+  filter(Pond_ID %in% hydro_valid$Pond_ID & season_col %in% hydro_valid$Season)
+
+rows_to_fill_valid <- rows_to_fill_valid %>% 
+  select(-Strat)  # Remove Strat column
+
+# Step 4: Join with hydro_valid to get the corresponding Strat values
+rows_with_hydro <- rows_to_fill_valid %>%
+  left_join(hydro_valid, by = c("Pond_ID" = "Pond_ID", 
+                                "season_col" = "Season", 
+                                "year" = "Year"))  # Now matching on character year
+
+# Step 5: Define a function to calculate the mode, or average in case of tie
+get_mode_or_avg <- function(x) {
+  counts <- table(x)
+  max_count <- max(counts)
+  modes <- names(counts[counts == max_count])
+  
+  if (length(modes) == 1) {
+    return(modes)  # Return mode if only one mode
+  } else {
+    # If there are multiple modes, calculate the average
+    return(mean(as.numeric(modes)))
+  }
+}
+
+
+
+```
+
+```{r}
+
+# Step 6: Apply the mode or average function on the matched rows
+rows_with_hydro <- rows_with_hydro %>%
+  group_by(Pond_ID, season_col, year) %>%
+  mutate(Strat_filled = ifelse(!is.na(Strat), get_mode_or_avg(Strat), NA)) %>%  # Only fill if Strat is not NA
+  ungroup()
+
+# Step 7: Merge the filled values back to the original dataframe
+model_df_nat5_filled_strat_final <- model_df_nat5_filled_strat_final %>%
+  left_join(rows_with_hydro %>%
+              select(Pond_ID, season_col, year, MeasurementDate, Strat_filled),
+            by = c("Pond_ID", "season_col", "year", "MeasurementDate")) %>%
+  mutate(Strat = ifelse(is.na(Strat), Strat_filled, Strat)) %>%
+  select(-Strat_filled)
+
+# Step 8: Check the result for rows that still have NA in Strat
+model_df_nat5_filled_strat_final[is.na(model_df_nat5_filled_strat_final$Strat),]
+
+```
+```{r}
+
+
+model_df_nat5_filled_strat_final<- merge(model_df_nat5_filled_strat_final,id[,c('Pond_ID','Country','Pondscape')],
+                                         by='Pond_ID',all.x=T)
+write.csv(model_df_nat5_filled_strat_final,paste0(data_dir,'model_df_nat5_filled_strat_final.csv'))
+```
+
+

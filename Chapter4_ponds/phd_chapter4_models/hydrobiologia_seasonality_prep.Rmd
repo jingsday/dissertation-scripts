@@ -1,0 +1,112 @@
+---
+title: "hydro_prep"
+author: "Jing"
+date: "2025-04-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Input, echo=FALSE}
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/'
+model_df_nat5_filled_strat_final <- read.csv(paste0(data_dir,'model_df_nat5_filled_strat_final.csv'))
+```
+
+```{r Strat fix previous}
+table(model_df_nat5_filled_strat_final$Strat)
+
+model_df_nat5_filled_strat_final[model_df_nat5_filled_strat_final$Strat=='0.5',]
+# Ensure Strat is numeric
+model_df_nat5_filled_strat_final$Strat <- as.numeric(model_df_nat5_filled_strat_final$Strat)
+
+# Filter rows where Strat == 0.5
+model_df_nat5_filled_strat_final_0_5 <- model_df_nat5_filled_strat_final %>%
+  filter(Strat == 0.5)
+
+# View the result
+model_df_nat5_filled_strat_final_0_5
+
+
+#chose mode
+strat_half_rows <- model_df_nat5_filled_strat_final %>%
+  filter(Strat == 0.5)
+
+nrow(strat_half_rows)  # Total number of 0.5 rows
+head(strat_half_rows)  # Preview
+model_df_nat5_filled_strat_final <- model_df_nat5_filled_strat_final %>%
+  mutate(Strat = ifelse(Strat == 0.5, NA, Strat))
+
+# Helper function to get mode, return NA if there's no unique mode
+get_unique_mode <- function(x) {
+  x <- na.omit(x)
+  tab <- table(x)
+  if (length(tab) == 0) return(NA)
+  max_val <- max(tab)
+  modes <- as.numeric(names(tab[tab == max_val]))
+  if (length(modes) == 1) {
+    return(modes)
+  } else {
+    return(NA)
+  }
+}
+
+# Step 2: Prepare the Strat data using the mode
+strat_mode_summary <- hydro_strat_id %>%
+  filter(!is.na(Strat)) %>%
+  group_by(PondCode, Season) %>%
+  summarise(Strat_mode = get_unique_mode(Strat), .groups = "drop")
+
+# Step 3: Left join the mode-based summary into your main dataframe
+model_df_nat5_filled_strat_final <- model_df_nat5_filled_strat_final %>%
+  left_join(strat_mode_summary, by = c("PondCode", "season_col" = "Season")) %>%
+  mutate(Strat = ifelse(is.na(Strat), Strat_mode, Strat)) %>%
+  select(-Strat_mode)
+
+
+table(model_df_nat5_filled_strat_final$Strat)
+
+```
+
+```{r}
+
+#write.csv(model_df_nat5_filled_strat_final,paste0(data_dir,'model_df_nat5_filled_strat_final_02.csv'))
+
+```
+
+```{r Prep}
+library(dplyr)
+
+model_df_nat5_filled_strat_final$X <- as.factor(model_df_nat5_filled_strat_final$X)
+model_df_nat5_filled_strat_final$year <- as.factor(model_df_nat5_filled_strat_final$year)
+model_df_nat5_filled_strat_final$Strat <- as.factor(model_df_nat5_filled_strat_final$Strat)
+
+#season df 
+glmm_season_df <- model_df_nat5_filled_strat_final %>%
+  group_by(PondCode,season_col) %>%
+  summarise(across(where(is.numeric), ~ mean(.x, na.rm = TRUE))) %>%
+  ungroup()
+
+
+#Overview of glmm_season_df
+glmm_season_df <-merge(glmm_season_df,model_df_nat5_filled_strat_final[,c('PondCode','Pond_ID','Country','Pondscape')],
+                       by='PondCode',all.x=T)
+
+#We dont do mean here, we select values from the 
+table(glmm_season_df$Pond_dries) #one pond dries has 1.67 
+#MUN_105 
+table(glmm_season_df$Strat) #2 have 1.33, 52 have 1.5
+unique(glmm_season_df[glmm_season_df$Strat > 1.33 & glmm_season_df$Strat < 1.7, 'PondCode'])
+
+
+
+```
+
+```{r populate area, depth, post_veg}
+#April 8th use value for different season 
+
+
+
+```
+

@@ -1,0 +1,290 @@
+---
+title: "hydro_model"
+author: "Jing"
+date: "2025-04-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility'
+glmm_seasonality_tp_df <- read.csv(paste0(data_dir,'hydro_seasonality_glmm_df_april9.csv'))
+glmm_seasonality_tp_df$Pond_dries_cat <- 0
+library(dplyr)
+
+glmm_seasonality_tp_df <- glmm_seasonality_tp_df %>%
+  mutate(
+    Pond_dries_cat = case_when(
+      Pond_dries == 0 ~ "Permanent",
+      Pond_dries == 1 ~ "Semi",
+      Pond_dries == 2 ~ "Temporary",
+      TRUE ~ NA_character_  # for any other or NA values
+    )
+  )
+
+model_df <- glmm_seasonality_tp_df[!is.na(glmm_seasonality_tp_df$TP),] #765 rows
+table(model_df$Strat)
+out_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT'
+#write.csv(model_df, paste0(out_dir,'hydro_model_glmm_df_april9.csv'))
+table(model_df$Strat)
+
+check_strat <- model_df %>% 
+  filter(near(Strat, 0.5))
+
+
+# Filter model_df where Strat is near 0.5
+model_df_filtered <- model_df %>%
+  filter(near(Strat, 0.5))
+model_df_filtered$year <- as.numeric(model_df_filtered$year)
+closest_match$year <- as.numeric(closest_match$year)
+
+model_df_filtered <- model_df_filtered[,-c(25)]
+# Join the filtered model_df with closest_match
+
+model_df_joined <- merge(model_df_filtered, closest_match[,c('Pond_ID', "PondCode","year", "season_col",'Strat')], 
+                         by = c('Pond_ID',"PondCode","year", "season_col"),all.x=T)
+
+table(model_df_joined$Strat)
+View(model_df_joined)
+model_df_remaining <- model_df %>%
+  filter(!near(Strat, 0.5))
+
+model_df <- rbind(model_df_remaining, model_df_joined)
+
+table(model_df$Strat)
+
+out_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT'
+write.csv(model_df, paste0(out_dir,'hydro_model_glmm_df_april9.csv'))
+
+
+check_strat$PondCode 
+
+# Populate Strat
+# hydro_strat <- read.csv('/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/env_all_stratification.csv')
+# hydro_strat[hydro_strat$Season =='Fall',]$Season <-'Autumn'
+# 
+# ref <- read.csv('/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/PONDERFUL_PondID_gas_work.csv')
+# ref$PondCode <- toupper(ref$PondCode)
+# 
+# hydro_strat_id <- merge(hydro_strat,ref[,c('PondCode','Pond_ID')],by='PondCode',all.x=T)
+# table(is.na(hydro_strat_id$Pond_ID))#none
+# 
+# #check orignial source
+# source <- hydro_strat_id[hydro_strat_id$PondCode %in%check_strat$PondCode,]
+# View(source)
+# source$Date <- as.Date(source$Date)
+# 
+# #PC check date sampled 
+# data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_DATA/'
+# 
+# PC <- read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_PhysicoChemistry_20240516.csv'))
+# PC$PondCode <- toupper(PC$PondCode)
+# 
+# 
+# PC[] <- lapply(PC, gsub, pattern='<', replacement='')
+# PC$NOTES <- NULL
+# PC$Notes..different.date.O2.spls.taken <- NULL
+# PC <-PC[!is.na(PC$MeasurementDate),]
+# PC[,-c(1:3)] <- sapply(PC[,-c(1:3)],as.numeric)
+# PC$MeasurementDate <- as.Date(PC$MeasurementDate, format = "%d/%m/%Y")
+# PC$year <- format(PC$MeasurementDate, "%Y")
+# 
+# # PC <- merge(PC,Pond[,c("PondCode","AssessmentDate","Pond_dries")],all.x = T,by.x = c('PondCode', 'MeasurementDate'),
+# #,     by.y=c('PondCode', 'AssessmentDate'))
+# 
+# PC[!is.na(PC$TN) & PC$TN >= 10,]$TN <- NA
+# 
+# PC <- PC[PC$PondCode %in%check_strat$PondCode,]
+# PC <- PC[!is.na(PC$TN),] #105 
+# # 
+# 
+# library(dplyr)
+# 
+# # Step 1: Ensure Date columns are Date class
+# PC$MeasurementDate <- as.Date(PC$MeasurementDate)
+# source$Date <- as.Date(source$Date)
+# 
+# # Step 2: Merge on PondCode, Year, and Season
+# joined <- left_join(
+#   PC,
+#   source,
+#   by = c("PondCode" = "PondCode", "year" = "Year", "season_col" = "Season")
+# )
+# 
+# # Step 3: Calculate absolute date difference
+# joined <- joined %>%
+#   mutate(date_diff = abs(as.numeric(MeasurementDate - Date)))
+# 
+# joined <- joined[,c('PondCode','Pond_ID', 'year', 'season_col','Strat','MeasurementDate','Date','date_diff')]
+# 
+# # Step 4: For each PC record, keep only the row with the minimum date_diff
+# closest_match <- joined %>%
+#   group_by(PondCode, year, season_col) %>%
+#   slice_min(order_by = date_diff, with_ties = FALSE) %>%
+#   ungroup()
+# 
+# closest_match$year <- format(closest_match$MeasurementDate, "%Y")
+# 
+
+```
+
+
+```{r}
+library(corrplot)
+df_modelling <- model_df[,c("Pond_dries","Pond_dries_cat","PondCode","Country",
+                            "Pondscape","season_col","year","log_TN","log_TP",
+                            'Animals_cont.s', 'Depth.s','Area.s',"Aquatic_500.s",
+                            "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s",
+                            "Urban_500.s", "natural_5_filled.s","MeanT.s","sum_P.s","post_Emerse_pond.s","Strat")]
+
+df_modelling$Strat <- as.factor(df_modelling$Strat)
+df_modelling$Pond_dries <- as.factor(df_modelling$Pond_dries)
+
+
+colSums(is.na(df_modelling)) #one in post_Emerse
+
+corrplot(cor(na.omit(df_modelling[,c("log_TN","log_TP",'Animals_cont.s','Area.s',
+                                            'Depth.s','Area.s',"Aquatic_500.s",
+                                            "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+                                            "Urban_500.s", "natural_5_filled.s","MeanT.s","sum_P.s")])), 
+         type = "upper", order = "hclust",tl.col ="black", tl.srt = 45 )
+
+
+
+round(cor(na.omit(df_modelling[,c("log_TN","log_TP",'Animals_cont.s',
+                                            'Depth.s','Area.s',"Aquatic_500.s",
+                                            "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+                                            "Urban_500.s", "natural_5_filled.s","MeanT.s","sum_P.s")])),2)
+na.omit(df_modelling)
+```
+
+```{r}
+d <-na.omit(df_modelling)
+d2 <- d[,c("log_TN","log_TP", "season_col", "year", "MeanT","sum_P",
+           'Area','Depth',"Pond_dries", "post_Emerse_pond","Strat", "Aquatic_500",
+           "Cropland_500","Forest_500","Pastures.and.open.nature_500" ,
+           "Urban_500", "natural_5_filled",'Animals_cont')]
+d2$season_col <- as.factor(d2$season_col)
+colnames(d2) <- c(
+  "TN",               # TN.t
+  "TP",               # TP.t
+  "Season",                # season_col
+  "Year",                  # year
+  "Mean Temperature",             # MeanT
+  "Total Precipitation",            # sum_P
+  "Area",                  # Area
+  "Depth",                 # Depth
+  "Hydroperiod",            # Pond_dries
+  "Emersed vegetation",      # post_Emerse_pond
+  "Stratification",        # Strat
+  "Aquatic (500m)",          # Aquatic_500
+  "Cropland (500m)",         # Cropland_500
+  "Forest (500m)",           # Forest_500
+  "Pasture & Open Nature (500m)",     # Pastures.and.open.nature_500
+  "Urban (500m)",            # Urban_500
+  "Natural (5m)",       # natural_5_filled
+  "Livestock intensity"        # Animals_cont
+)
+```
+
+```{r Stratification involved}
+library(lmerTest)
+library(sjPlot)
+
+###theme_bw() !!!!!!!!!!!!!
+
+TN_glmm <- lmer(
+  formula = log_TN ~ year + season_col * (Cropland_500.s + Pond_dries_cat + Depth.s + Area.s) + 
+    Strat + MeanT.s + sum_P.s + post_Emerse_pond.s + Forest_500.s + 
+    Aquatic_500.s + Urban_500.s + Animals_cont.s + natural_5_filled.s + 
+    (1 | PondCode) + (1 | Country:Pondscape) + (1 | Country),
+  data = df_modelling,na.action = "na.fail"
+)
+
+step_model <- step(TN_glmm)
+step_model
+
+TN_glmm_step <- lmer(formula= log_TN ~ season_col + Cropland_500.s + Pond_dries_cat + Depth.s + Area.s + Strat + sum_P.s + Animals_cont.s + (1 | PondCode) + (1 | Country:Pondscape) + (1 | Country) + season_col:Pond_dries_cat + season_col:Depth.s + season_col:Area.s,data=d)
+
+tab_model(TN_glmm_step,transform=NULL,show.intercept = TRUE)
+
+
+TN_glmm_step_simplified <- lmer(formula= log_TN ~ season_col + Cropland_500.s +
+                                  Pond_dries_cat + Depth.s + Strat + sum_P.s + Animals_cont.s + (1 | PondCode)
+                                + (1 | Country:Pondscape) + (1 | Country) + season_col:Pond_dries_cat +
+                                  season_col:Depth.s,data=d)
+tab_model(TN_glmm_step_simplified,transform=NULL,show.intercept = TRUE)
+
+BIC(TN_glmm)
+BIC(TN_glmm_step)
+
+BIC(TN_glmm_step_simplified)
+
+
+library("cv")
+summary(cv(TN_glmm_step,
+   k = 10,
+   seed = 5240))
+
+drop1(TN_glmm_step, test = "Chisq")
+# 
+# TN_glmm_step_simplified <- lmer(log_TN ~ season_col + 
+#                                   Cropland_500.s + Depth.s + sum_P.s +
+#                                  Strat + MeanT.s + Pond_dries + 
+#                                   post_Emerse_pond.s +
+#                                  season_col:MeanT.s + 
+#                                   season_col:Pond_dries + (1 | PondCode),
+#                                  data = df_modelling, REML = FALSE)
+# visreg(TN_glmm_step_simplified, gg = TRUE,partial=TRUE,scale='response')
+# 
+# AIC(TN_glmm_step, TN_glmm_step_simplified)
+# BIC(TN_glmm_step, TN_glmm_step_simplified)
+# 
+# tab_model(TN_glmm_step_simplified)
+# 
+# drop1(TN_glmm_step_simplified, test = "Chisq")
+# 
+# df_modelling$Strat <- as.factor(df_modelling$Strat)
+# TN_glmm_step_more_simplified <- lmer(log_TN ~ season_col + Cropland_500.s + Depth.s + 
+#                                      sum_P.s + Strat + MeanT.s + Pond_dries_cat + 
+#                                      season_col:MeanT.s + season_col:Pond_dries + 
+#                                      (1 | PondCode), 
+#                                      data = df_modelling, REML = FALSE)
+# 
+# tab_model(TN_glmm_step_more_simplified)
+# summary(cv(TN_glmm_step_more_simplified,
+#    k = 5,
+#    seed = 5240))
+
+#Pondscape and country
+
+TN_glmm_step_pondscape <- lmer(log_TN ~ season_col + Cropland_500.s + Depth.s + 
+                                     sum_P.s + Strat + MeanT.s + Pond_dries + 
+                                     season_col:MeanT.s + season_col:Pond_dries +  
+                                (1 | PondCode) , 
+                                     data = df_modelling, REML = FALSE)
+
+
+BIC(TN_glmm_step_more_simplified,TN_glmm_step_pondscape)
+anova(TN_glmm_step_pondscape,TN_glmm_step_more_simplified)
+
+tab_model(TN_glmm_step_pondscape)
+
+
+TN_glmm_hydro <- lmer(
+  formula = log_TN ~ year+ season_col * (natural_5_filled.s + Cropland_500.s + 
+                 Depth.s + sum_P.s + Strat + MeanT.s+Pond_dries_cat+post_Emerse_pond.s) 
+  + Forest_500.s + Aquatic_500.s + Urban_500.s+ Animals_cont.s + 
+    (1 | PondCode),data = df_modelling, na.action = "na.fail"
+)
+step_model <- step(TN_glmm_hydro)
+step_model
+TN_glmm_hydro_step <- lmer(log_TN ~ season_col + Cropland_500.s + Depth.s + sum_P.s + Strat + MeanT.s + Pond_dries_cat + post_Emerse_pond.s + (1 | PondCode) + season_col:Depth.s + season_col:MeanT.s + season_col:Pond_dries_cat + season_col:post_Emerse_pond.s,data = df_modelling, na.action = "na.fail")
+
+tab_model(TN_glmm_hydro_step)
+
+
+```

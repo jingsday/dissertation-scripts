@@ -1,0 +1,339 @@
+---
+title: "hydro_season_model"
+author: "Jing"
+date: "2025-04-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r read}
+df <- read.csv('/Users/lidiayung/Downloads/model_df_nat5_filled_strat_final.csv')
+df$PondCode <- toupper(df$PondCode)
+```
+
+```{r}
+library(dplyr)
+glmm_season_df <- df %>%
+  group_by(Pond_ID,PondCode,season_col) %>%
+  summarise(across(where(is.numeric), ~mean(.x, na.rm=T))) %>%
+  ungroup()
+View(glmm_season_df)
+
+glmm_season_tp_df <- glmm_season_df[!is.na(glmm_season_df$TP),]#597 rows
+glmm_season_tp_df <- glmm_season_tp_df[!is.na(glmm_season_tp_df$natural_5_filled), ]#593 rows 
+
+table(is.na(glmm_season_tp_df$Pond_dries))
+table(glmm_season_tp_df$Pond_dries)
+glmm_season_tp_df[glmm_season_tp_df$PondCode == 'MUN_105','Pond_dries'] <- 1 #use 1 from 2022
+
+
+#Overview
+table(is.na(glmm_season_tp_df$Depth))
+table(is.na(glmm_season_tp_df$Area))
+# FALSE  TRUE 
+#   559    34 
+#populate Area and Depth using value from the same year
+
+#area
+area_reference <- glmm_season_tp_df %>%
+  filter(!is.na(Area)) %>%
+  group_by(PondCode) %>%
+  summarise(
+    unique_areas = list(unique(Area)),
+    n = n_distinct(Area),
+    .groups = "drop"
+  )
+
+# Step 2: Keep only those with exactly one unique Area value
+area_single_value <- area_reference %>%
+  filter(n == 1) %>%
+  mutate(Area_to_fill = sapply(unique_areas, function(x) x[1])) %>%
+  select(PondCode, Area_to_fill)
+
+# Step 3: Left join to the original df and fill missing Area
+glmm_season_tp_df <- glmm_season_tp_df %>%
+  left_join(area_single_value, by = "PondCode") %>%
+  mutate(Area = ifelse(is.na(Area), Area_to_fill, Area)) %>%
+  select(-Area_to_fill)
+
+#depth
+Depth_reference <- glmm_season_tp_df %>%
+  filter(!is.na(Depth)) %>%
+  group_by(PondCode) %>%
+  summarise(
+    unique_dries = list(unique(Depth)),
+    n = n_distinct(Depth),
+    .groups = "drop"
+  )
+
+Depth_single_value <- Depth_reference %>%
+  filter(n == 1) %>%
+  mutate(Depth_to_fill = sapply(unique_dries, function(x) x[1])) %>%
+  select(PondCode, Depth_to_fill)
+
+glmm_season_tp_df <- glmm_season_tp_df %>%
+  left_join(Depth_single_value, by = "PondCode") %>%
+  mutate(Depth = ifelse(is.na(Depth), Depth_to_fill, Depth)) %>%
+  select(-Depth_to_fill)
+
+# Pond_dries
+Pond_dries_reference <- glmm_season_tp_df %>%
+  filter(!is.na(Pond_dries)) %>%
+  group_by(PondCode) %>%
+  summarise(
+    unique_dries = list(unique(Pond_dries)),
+    n = n_distinct(Pond_dries),
+    .groups = "drop"
+  )
+
+Pond_dries_single_value <- Pond_dries_reference %>%
+  filter(n == 1) %>%
+  mutate(Pond_dries_to_fill = sapply(unique_dries, function(x) x[1])) %>%
+  select(PondCode, Pond_dries_to_fill)
+
+glmm_season_tp_df <- glmm_season_tp_df %>%
+  left_join(Pond_dries_single_value, by = "PondCode") %>%
+  mutate(Pond_dries = ifelse(is.na(Pond_dries), Pond_dries_to_fill, Pond_dries)) %>%
+  select(-Pond_dries_to_fill)
+
+# post_Emerse_pond
+post_emerse_reference <- glmm_season_tp_df %>%
+  filter(!is.na(post_Emerse_pond)) %>%
+  group_by(PondCode) %>%
+  summarise(
+    unique_post = list(unique(post_Emerse_pond)),
+    n = n_distinct(post_Emerse_pond),
+    .groups = "drop"
+  )
+
+post_emerse_single_value <- post_emerse_reference %>%
+  filter(n == 1) %>%
+  mutate(post_to_fill = sapply(unique_post, function(x) x[1])) %>%
+  select(PondCode, post_to_fill)
+
+glmm_season_tp_df <- glmm_season_tp_df %>%
+  left_join(post_emerse_single_value, by = "PondCode") %>%
+  mutate(post_Emerse_pond = ifelse(is.na(post_Emerse_pond), post_to_fill, post_Emerse_pond)) %>%
+  select(-post_to_fill)
+
+#
+table(is.na(glmm_season_tp_df$Depth))
+table(is.na(glmm_season_tp_df$Area))
+table(is.na(glmm_season_tp_df$post_Emerse_pond))#one missing tho. Keep it 
+
+```
+
+
+
+```{r Strat}
+#ref
+hydro_strat <- read.csv('/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/env_all_stratification.csv')
+hydro_strat[hydro_strat$Season =='Fall',]$Season <-'Autumn'
+
+ref <- read.csv('/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/PONDERFUL_PondID_gas_work.csv')
+ref$PondCode <- toupper(ref$PondCode)
+
+hydro_strat_id <- merge(hydro_strat,ref[,c('PondCode','Pond_ID')],by='PondCode',all.x=T)
+table(is.na(hydro_strat_id$Pond_ID))#none
+
+#check source
+glmm_season_tp_df_filtered <- glmm_season_tp_df %>%
+  filter(!Strat %in% c(0, 1, 2))
+check <- hydro_strat_id[hydro_strat_id$PondCode %in% glmm_season_tp_df_filtered$PondCode,c("PondCode","Date",     
+                                                                                           "Season","Year", "Strat")] 
+#Populate strat, multiple different values in the same season, and or in different years
+get_unique_mode <- function(x) {
+  tab <- table(x)
+  max_count <- max(tab)
+  modes <- names(tab)[tab == max_count]
+  if (length(modes) == 1) {
+    return(as.numeric(modes))
+  } else {
+    return(NA)  # Return NA if there's a tie
+  }
+}
+
+strat_mode_summary <- check %>%
+  group_by(PondCode, Season) %>%
+  summarise(Strat_mode = get_unique_mode(Strat), .groups = "drop")
+View(strat_mode_summary)
+
+table(is.na(strat_mode_summary$Strat_mode))
+
+# Tied groups (Strat_mode is NA)
+tied_groups <- strat_mode_summary %>%
+  filter(is.na(Strat_mode)) %>%
+  select(PondCode, Season,Strat_mode)
+
+first_strat_from_ties <- check %>%
+  semi_join(tied_groups, by = c("PondCode", "Season")) %>%
+  filter(!is.na(Strat)) %>%
+  arrange(PondCode, Season, Date) %>%  # ensure Date order
+  group_by(PondCode, Season) %>%
+  summarise(Strat_first = first(Strat), .groups = "drop")
+
+#join back 
+# Step 1: Combine the two strat sources (mode and first from tie)
+strat_combined <- bind_rows(
+  strat_mode_summary %>% rename(Strat_final = Strat_mode),
+  first_strat_from_ties %>% rename(Strat_final = Strat_first)
+)
+
+# Step 2: Join back to glmm_season_tp_df
+glmm_season_tp_df <- glmm_season_tp_df %>%
+  mutate(Strat = ifelse(!Strat %in% c(0, 1, 2), NA, Strat))
+
+
+glmm_season_tp_df <- glmm_season_tp_df %>%
+  left_join(strat_combined, by = c("PondCode", "season_col" = "Season")) %>%
+  mutate(Strat = ifelse(is.na(Strat), Strat_final, Strat)) %>%
+  select(-Strat_final)
+
+```
+
+
+```{r}
+library(corrplot)
+
+df_modelling$
+df_modelling <- glmm_season_tp_df[,c("PondCode","Country","Pondscape","Pond_dries_cat",
+                                     "season_col","log_TN","log_TP","Area.s",
+                                     'Animals_cont.s', 'Depth.s',"Aquatic_500.s",
+                                     "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+                                     "Urban_500.s",
+                                     "Natural_5_filled.s","MeanT.s","sum_P.s","post_Emerse_pond.s","Strat")]
+
+colSums(is.na(df_modelling))
+
+corrplot(cor(na.omit(df_modelling[,c("log_TN","log_TP",'Animals_cont.s',
+                                            'Depth.s',"Aquatic_500.s",
+                                            "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+                                            "Urban_500.s", "Natural_5_filled.s","MeanT.s","sum_P.s")])), 
+         type = "upper", order = "hclust",tl.col ="black", tl.srt = 45 )
+
+
+
+round(cor(na.omit(df_modelling[,c("log_TN","log_TP",'Animals_cont.s',
+                                            'Depth.s',"Aquatic_500.s",
+                                            "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+                                            "Urban_500.s", "Natural_5_filled.s","MeanT.s","sum_P.s")])),2)
+
+```
+
+
+
+```{r Stratification involved}
+library(lmerTest)
+library(sjPlot)
+
+###theme_bw() !!!!!!!!!!!!!
+
+df_modelling <- df_modelling[,-c(20)]
+
+df_modelling <- na.omit(df_modelling)
+length(unique(df_modelling$PondCode))
+
+TN_glmm <- lmer(
+  formula = log_TN ~season_col * (Natural_5_filled.s + Cropland_500.s + 
+                 Depth.s + sum_P.s +  MeanT.s +Pond_dries_cat + post_Emerse_pond.s) 
+  +Forest_500.s + Aquatic_500.s + Urban_500.s +Animals_cont.s+(1 | PondCode)+ (1|Pondscape:Country)+(1|Country), 
+  data = df_modelling, na.action = "na.fail")
+
+step_model <- step(TN_glmm)
+
+TN_glmm <- lmer(
+  formula = log_TN ~ year+ season_col * (Natural_5_filled.s + Cropland_500.s + 
+                 Depth.s + sum_P.s + Strat + MeanT.s +Pond_dries_cat + post_Emerse_pond.s) 
+  +Forest_500.s + Aquatic_500.s + Urban_500.s +Animals_cont.s+(1 | PondCode)+(1 | Country), data = df_modelling, na.action = "na.fail")
+
+
+step_model <- step(TN_glmm)
+step_model
+
+test <- lmer(log_TN ~ season_col + Cropland_500.s + Depth.s + Strat + MeanT.s + Pond_dries_cat + post_Emerse_pond.s + Animals_cont.s + (1 | PondCode) + (1 | Country) + season_col:Depth.s + season_col:MeanT.s + season_col:Pond_dries_cat + season_col:post_Emerse_pond.s,data = df_modelling, na.action = "na.fail")
+
+tab_model(test,transform=NULL,show.intercept = TRUE)
+
+TN_glmm_step <- lmer(log_TN ~ season_col + 
+                       Cropland_500.s + Depth.s + sum_P.s + 
+                       Strat + MeanT.s + Pond_dries_cat + 
+                       post_Emerse_pond.s + (1 | PondCode) + 
+                       season_col:Depth.s + 
+                       season_col:MeanT.s + season_col:Pond_dries_cat +
+                       season_col:post_Emerse_pond.s,
+                   data = df_modelling, na.action = "na.fail")
+
+step(TN_glmm_step)
+tab_model(TN_glmm_step,file=paste0(data_dir,'TN_seasonility_model.doc'))
+
+BIC(TN_glmm)
+BIC(TN_glmm_step)
+
+BIC(TN_glmm_step_simplified)
+library("cv")
+summary(cv(TN_glmm_step,
+   k = 10,
+   seed = 5240))
+
+drop1(TN_glmm_step, test = "Chisq")
+# 
+# TN_glmm_step_simplified <- lmer(log_TN ~ season_col + 
+#                                   Cropland_500.s + Depth.s + sum_P.s +
+#                                  Strat + MeanT.s + Pond_dries + 
+#                                   post_Emerse_pond.s +
+#                                  season_col:MeanT.s + 
+#                                   season_col:Pond_dries + (1 | PondCode),
+#                                  data = df_modelling, REML = FALSE)
+# visreg(TN_glmm_step_simplified, gg = TRUE,partial=TRUE,scale='response')
+# 
+# AIC(TN_glmm_step, TN_glmm_step_simplified)
+# BIC(TN_glmm_step, TN_glmm_step_simplified)
+# 
+# tab_model(TN_glmm_step_simplified)
+# 
+# drop1(TN_glmm_step_simplified, test = "Chisq")
+# 
+# df_modelling$Strat <- as.factor(df_modelling$Strat)
+# TN_glmm_step_more_simplified <- lmer(log_TN ~ season_col + Cropland_500.s + Depth.s + 
+#                                      sum_P.s + Strat + MeanT.s + Pond_dries_cat + 
+#                                      season_col:MeanT.s + season_col:Pond_dries + 
+#                                      (1 | PondCode), 
+#                                      data = df_modelling, REML = FALSE)
+# 
+# tab_model(TN_glmm_step_more_simplified)
+# summary(cv(TN_glmm_step_more_simplified,
+#    k = 5,
+#    seed = 5240))
+
+#Pondscape and country
+
+TN_glmm_step_pondscape <- lmer(log_TN ~ season_col + Cropland_500.s + Depth.s + 
+                                     sum_P.s + Strat + MeanT.s + Pond_dries + 
+                                     season_col:MeanT.s + season_col:Pond_dries +  
+                                (1 | PondCode) , 
+                                     data = df_modelling, REML = FALSE)
+
+
+BIC(TN_glmm_step_more_simplified,TN_glmm_step_pondscape)
+anova(TN_glmm_step_pondscape,TN_glmm_step_more_simplified)
+
+tab_model(TN_glmm_step_pondscape)
+
+
+TN_glmm_hydro <- lmer(
+  formula = log_TN ~ year+ season_col * (Natural_5_filled.s + Cropland_500.s + 
+                 Depth.s + sum_P.s + Strat + MeanT.s+Pond_dries_cat+post_Emerse_pond.s) 
+  + Forest_500.s + Aquatic_500.s + Urban_500.s+ Animals_cont.s + 
+    (1 | PondCode),data = df_modelling, na.action = "na.fail"
+)
+step_model <- step(TN_glmm_hydro)
+step_model
+TN_glmm_hydro_step <- lmer(log_TN ~ season_col + Cropland_500.s + Depth.s + sum_P.s + Strat + MeanT.s + Pond_dries_cat + post_Emerse_pond.s + (1 | PondCode) + season_col:Depth.s + season_col:MeanT.s + season_col:Pond_dries_cat + season_col:post_Emerse_pond.s,data = df_modelling, na.action = "na.fail")
+
+tab_model(TN_glmm_hydro_step)
+
+
+```

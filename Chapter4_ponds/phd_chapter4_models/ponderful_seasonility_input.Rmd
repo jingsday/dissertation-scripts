@@ -1,0 +1,179 @@
+---
+title: '?'
+author: "Jing"
+date: "2025-03-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r source and final columns}
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_DATA/'
+#Jing's mac
+Pond <- read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_PondCharacteristics_20240607.csv'))
+id <-  read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_PondID_20240124.csv'))
+LU5 <- read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_LandUse_5m_20240516.csv'), header=T, sep = ",")
+
+LU <- read.csv(paste0(data_dir,'LU_current.csv'), header=T, sep = ",")
+LC <- read.csv(paste0(data_dir,'LandCover_selectedradii.csv'), header=T, sep = ",")
+
+A <- read.csv(paste0(data_dir,'Animals.csv'), header=T, sep = ",")
+# Hetog100 <- read.csv(paste0(data_dir,'landscape_heterogeneity_100_allponds.csv'), header=T, sep = ",")
+# Hetog5 <- read.csv(paste0(data_dir,'landscape_heterogeneity_5_allponds.csv'), header=T, sep = ",")
+
+dom_landcover_nov <- read.csv(paste0(data_dir,'/ponderful_DATA_updated/PhyChe_XY_landcover_nov.txt'))
+dom_landcover_nov$PondCode <- toupper(dom_landcover_nov$PondCode)
+```
+
+```{r IDs}
+# Pond variables
+id <- id[,c("Pond_ID","PondCode","X","Y","Pondscape","Country","Strat_Survey","Resampling")]
+id$PondCode <- toupper(id$PondCode)
+
+id = id[id$Strat_Survey==1,]
+Pond <- Pond[,c("PondCode","AssessmentDate","Nat_res","Area","Depth","Pond_dries","Rel_waterlev","PVI","Area")]
+Pond$PondCode <- toupper(Pond$PondCode)
+
+Pond$AssessmentDate <- as.Date(Pond$AssessmentDate, format = "%d/%m/%Y")
+Pond$year <-substr(Pond$AssessmentDate, 1,4)
+```
+
+
+```{r PC:TN, TP,Sludge; mean per year per season}
+# Physicochemical variables: TN, TP
+PC <- read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_PhysicoChemistry_20240516.csv'))
+PC$PondCode <- toupper(PC$PondCode)
+
+
+
+PC[] <- lapply(PC, gsub, pattern='<', replacement='')
+PC$NOTES <- NULL
+PC$Notes..different.date.O2.spls.taken <- NULL
+PC <-PC[!is.na(PC$MeasurementDate),]
+PC[,-c(1:3)] <- sapply(PC[,-c(1:3)],as.numeric)
+PC$MeasurementDate <- as.Date(PC$MeasurementDate, format = "%d/%m/%Y")
+PC$year <- format(PC$MeasurementDate, "%Y")
+
+# PC <- merge(PC,Pond[,c("PondCode","AssessmentDate","Pond_dries")],all.x = T,by.x = c('PondCode', 'MeasurementDate'),
+#,     by.y=c('PondCode', 'AssessmentDate'))
+
+PC[!is.na(PC$TN) & PC$TN >= 10,]$TN <- NA
+#PC[!is.na(PC$CHLa_Spectro) & PC$CHLa_Spectro >= 800,]$CHLa_Spectro <- NA
+PC <- merge(PC, id[,c('PondCode','Pond_ID')],by = 'PondCode',all.x=T)
+
+#PC table seasons
+PCs=PC[!is.na(PC$TN),c("PondCode","Pond_ID","MeasurementDate","year","season_col","Sludge","TN","TP" )]
+
+PCunique <- PCs %>% 
+  group_by(PondCode, year, season_col) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE), 
+            across(where(is.character), first),  # Keep first occurrence of character columns
+            .groups = "drop")
+
+PCunique <- PCunique[PCunique$PondCode %in% dom_landcover_nov$PondCode,]#remove fish ponds etc
+
+#Adding country info
+PCunique <- merge(PCunique,id[,c("PondCode","Country")],all.x = T,by = 'PondCode')
+
+length(unique(PCunique$PondCode))#207
+```
+
+
+```{r LU5m: natural 5}
+# Land use 5m (field data)
+LU5$PondCode <- toupper(LU5$PondCode)
+
+LU5$Natural_5 = LU5$Moorland + LU5$Rank_veg + LU5$Woodland + LU5$Marsh + LU5$Other
+LU5$AssessmentDate <- as.Date(LU5$AssessmentDate, format = "%d/%m/%Y")
+LU5$year <- format(LU5$AssessmentDate, "%Y")
+
+LU5unique <- LU5 %>%  group_by(PondCode,year) %>%
+  summarise(Natural_5 = mean(Natural_5, na.rm = TRUE), .groups = "drop")
+```
+
+```{r LU500m: model_df:+500m variables}
+LC <- read.csv(paste0(data_dir,'ponderful_DATA_updated/LandCover_selectedradii.csv'), header=T, sep = ",")
+LC$PondCode <- toupper(LC$PondCode)
+
+
+```
+
+
+```{r model_df:TN, TP, Depth,Pond_dries,Sludge}
+model_df <- PCunique[,c("PondCode","Pond_ID","year", "Country","season_col","Sludge","TN","TP")]
+model_df <-merge(model_df,LU5unique,on=c('PondCode','year'),all.x=T)
+# model_df <-merge(model_df,LU5[,c("Unimp_grassland","Semimp_grassland", "Imp_grassland",  
+#                               "Arable","Urban", "Rock","Marsh",
+#                               "Streams","Other")],on=c('PondCode','year'),all.x=T)
+
+
+#model_df <- merge(model_df,Pond[,c('PondCode','year','Depth','Pond_dries')],on=c('PondCode','year'),all.x=T)
+
+length(unique(model_df$PondCode))
+length(unique(model_df[is.na(model_df$Sludge),]$PondCode))
+model_df <- merge(model_df,LC[,c(4,6:10)],by="PondCode", all.x=T) 
+
+model_df <- merge(model_df,Pond[,c('PondCode', "year" ,'Area','Depth','Pond_dries')],by=c('PondCode','year'),all.x=T)
+```
+
+```{r vegetation; model_df:+post_Emerse_pond}
+vegetation <- read.csv('/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/D2.4_PondCharacteristics_vegetation_post_Emerse_pond.csv',header=T, sep = ";")
+vegetation$PondCode <- toupper(vegetation$PondCode)
+
+
+length(unique(vegetation$PondCode))
+vegetation$AssessmentDate <- as.Date(vegetation$AssessmentDate, format = "%d/%m/%Y")
+vegetation$year <-format(vegetation$AssessmentDate, "%Y")
+
+
+model_df <-merge(model_df,vegetation[,c('PondCode','year','post_Emerse_pond')],on=c('PondCode','year'),all.x=T)
+```
+
+
+```{r}
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/'
+
+climatic <- read.csv(paste0(data_dir,'season_temp_prec.csv'))
+
+model_df <- merge(model_df, climatic[,c('Pond_ID',"year","season_col",'MeanT','sum_P')],
+      by = c('Pond_ID',"year","season_col"),all.x=T)
+
+length(unique(intersect(model_df$PondCode,climatic$PondCode)))#240
+```
+
+
+```{r}
+hydro_strat <- read.csv(paste0(data_dir,'env_all_stratification.csv'))
+hydro_strat[hydro_strat$Season =='Fall',]$Season <-'Autumn'
+
+ref <- read.csv(paste0(data_dir,'PONDERFUL_PondID_gas_work.csv'))
+ref$PondCode <- toupper(ref$PondCode)
+
+hydro_strat_id <- merge(hydro_strat,ref[,c('PondCode','Pond_ID')],by='PondCode',all.x=T)
+
+table(is.na(hydro_strat_id$Pond_ID))#none
+
+#hydro strat first value
+hydro_strat_id <- hydro_strat_id %>%
+  group_by(Pond_ID, Year, Season) %>%
+  slice(1) %>%
+  ungroup()
+
+
+model_df <- merge(model_df, hydro_strat_id[,c('Pond_ID','Season','Year','Strat')],
+       by.x= c('Pond_ID','season_col','year'),by.y = c('Pond_ID','Season','Year'),all.x=T)
+length(unique(model_df$PondCode))
+setdiff(dom_landcover_nov$PondCode,model_df$PondCode)#
+
+
+#Lifestock
+A$lifestockQ=1
+A[A$lifestock == "Moderate",]$lifestockQ<-2
+A[A$lifestock == "High",]$lifestockQ<-3
+
+model_df <- merge(model_df,A[,c(1,2,5)],by=c("Pond_ID"))
+write.csv(model_df,paste0(data_dir,'hydrobiologia_seasonility_model.csv'))
+```
+

@@ -1,0 +1,302 @@
+---
+title: "ponderful seasonility modelling"
+author: "Jing"
+date: "2025-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(corrplot)
+```
+
+
+```{r Input, echo=FALSE}
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/'
+model_df <- read.csv(paste0(data_dir,'hydrobiologia_seasonility_model.csv'))
+```
+
+
+```{r Prep, echo=FALSE}
+#Factors
+##Country as factors
+model_df$Country <- as.factor(model_df$Country)
+levels(model_df$Country)
+
+
+## Bio climatic regions
+model_df$Country <- as.character(model_df$Country)
+
+# Initialize altregion as a copy of Country
+model_df$altregion <- model_df$Country
+
+model_df[model_df$Country %in% c('Belgium', 'Denmark', 'UK'), "altregion"] <- 'Atlantic'
+model_df[model_df$Country %in% c('Switzerland','Germany'), "altregion"] <- 'Temperate'
+
+# Check the changes
+table(model_df$altregion)
+
+##Factors and transformation 
+model_df$altregion <- as.factor(model_df$altregion)
+levels(model_df$altregion)
+```
+
+```{r Populate Pond dries }
+# Select relevant columns and keep only distinct combinations
+pond_changes <- model_df %>%
+  select(PondCode, season_col, year, Pond_dries, Strat) %>%
+  distinct()
+
+# Check for variability in Pond_dries_cat per pond across years/seasons
+pond_dry_var <- pond_changes %>%
+  group_by(PondCode) %>%
+  summarise(n_unique_dry = n_distinct(Pond_dries,na.rm = T)) %>%
+  filter(n_unique_dry > 1)
+
+# View how many ponds have varying values
+cat("Ponds with changes in Pond_dries_cat across years/seasons:", nrow(pond_dry_var), "\n")
+
+pondries_var_df <- model_df[model_df$PondCode %in% pond_dry_var$PondCode,]
+pondries_var_df <- pondries_var_df[,c("PondCode","season_col","year","Pond_dries")]
+pondries_var_df
+
+model_df[model_df$PondCode ==  'MUN_105', 'Pond_dries'] = 2
+
+```
+
+
+```{r}
+#populate natural 5
+model_df_nonna <- model_df %>%
+  group_by(PondCode,year, season_col) %>% 
+  mutate(
+    natural_5_filled = ifelse(is.na(Natural_5), 
+                           ifelse(n_distinct(Natural_5[!is.na(Natural_5)]) == 1, unique(nature[!is.na(Natural_5)]), 
+                                  ifelse(n_distinct(Natural_5[!is.na(Natural_5)]) > 1, 
+                                         as.character(PondCode), NA)), 
+                           Natural_5)
+  ) %>%
+  ungroup() %>%
+  group_by(PondCode) %>%
+  mutate(
+    natural_5_filled = ifelse(is.na(natural_5_filled), 
+                           ifelse(n_distinct(natural_5_filled[!is.na(natural_5_filled)]) == 1, unique(natural_5_filled[!is.na(natural_5_filled)]), 
+                                  ifelse(n_distinct(natural_5_filled[!is.na(natural_5_filled)]) > 1, 
+                                         as.character(PondCode), NA)), 
+                           natural_5_filled)
+  ) %>%
+  ungroup()
+```
+
+
+```{r Mean before transformation}
+model_df_nonna$X <- as.factor(model_df_nonna$X)
+model_df_nonna$year <- as.factor(model_df_nonna$year)
+model_df_nonna$Strat <- as.numeric(model_df_nonna$Strat)
+
+#year
+season_mean_df <- model_df_nonna %>% 
+  group_by(PondCode,season_col,year) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE))
+
+table(is.na(season_mean_df$Sludge))
+# FALSE  TRUE 
+#   221   410 
+
+length(unique(season_mean_df$PondCode))# 240 
+```
+
+
+```{r}
+#Adding log_TN (and log_TP)
+season_mean_df$log_TN <- log(season_mean_df$TN,base=10)
+hist(season_mean_df$log_TN)
+shapiro.test(season_mean_df$log_TN)
+
+season_mean_df$log_TP <- log(season_mean_df$TP,base=10)
+hist(season_mean_df$log_TP)
+shapiro.test(season_mean_df$log_TP)
+```
+
+
+```{r bestNormalize}
+library(bestNormalize)
+
+#Area
+shapiro.test(season_mean_df$Area)
+Arean <- bestNormalize(season_mean_df$Area)
+plot(Arean, leg_loc = "bottomright")
+season_mean_df$Area.t <- asinh(season_mean_df$Area)
+hist(season_mean_df$Area.t)
+shapiro.test(season_mean_df$Area.t)
+
+#Depth
+shapiro.test(season_mean_df$Depth)
+Depthn <- bestNormalize(season_mean_df$Depth)
+plot(Depthn, leg_loc = "bottomright")
+season_mean_df$Depth.t <- predict(orderNorm(season_mean_df$Depth))
+hist(season_mean_df$Depth.t)
+shapiro.test(season_mean_df$Depth.t)
+
+#Animals_cont  skew
+shapiro.test(season_mean_df$Animals_cont)
+Animals_contn <- bestNormalize(season_mean_df$Animals_cont)
+plot(Animals_contn, leg_loc = "bottomright")
+season_mean_df$Animals_cont.t <- predict(orderNorm(season_mean_df$Animals_cont))
+hist(season_mean_df$Animals_cont.t)
+shapiro.test(season_mean_df$Animals_cont.t)
+
+#MeanT
+shapiro.test(season_mean_df$MeanT)
+MeanT <- bestNormalize(season_mean_df$MeanT)
+plot(MeanT, leg_loc = "bottomright")
+season_mean_df$MeanT.t <- predict(orderNorm(season_mean_df$MeanT))
+hist(season_mean_df$MeanT.t)
+shapiro.test(season_mean_df$MeanT.t)
+
+#sum_P
+shapiro.test(season_mean_df$sum_P)
+sum_P <- bestNormalize(season_mean_df$sum_P)
+plot(sum_P, leg_loc = "bottomright")
+season_mean_df$sum_P.t <- predict(orderNorm(season_mean_df$sum_P))
+hist(season_mean_df$sum_P.t)
+shapiro.test(season_mean_df$sum_P.t)
+
+
+#Sludge
+shapiro.test(season_mean_df$Sludge)
+Sludge <- bestNormalize(season_mean_df$Sludge)
+plot(Sludge, leg_loc = "bottomright")
+season_mean_df$Sludge.t <- predict(orderNorm(season_mean_df$Sludge))
+hist(season_mean_df$SludgeP.t)
+shapiro.test(season_mean_df$Sludge.t)
+
+```
+
+```{r Quantile transformation}
+transformar_columna <- function(x) {
+  perc <- rank(x, na.last = "keep") / (sum(!is.na(x)) + 1)  # Calcular los percentiles manteniendo los NA
+  result <- ifelse(!is.na(x), qnorm(perc), NA)  # Transformar los percentiles a la distribución normal, manteniendo los NA
+  return(result)}
+
+#Natural_5, Aquatic_500,Cropland_500,Forest_500,Pastures.and.open.nature_500,Urban_500
+season_mean_df$natural_5_filled.t<-transformar_columna(season_mean_df$natural_5_filled)
+season_mean_df$Aquatic_500.t<-transformar_columna(season_mean_df$Aquatic_500)
+season_mean_df$Cropland_500.t<-transformar_columna(season_mean_df$Cropland_500)
+season_mean_df$Pastures.and.open.nature_500.t<-transformar_columna(season_mean_df$Pastures.and.open.nature_500)
+season_mean_df$Urban_500.t<-transformar_columna(season_mean_df$Urban_500)
+season_mean_df$Forest_500.t<-transformar_columna(season_mean_df$Forest_500)
+season_mean_df$post_Emerse_pond.t<-transformar_columna(season_mean_df$post_Emerse_pond)
+```
+
+```{r Scale}
+season_mean_df[,c(,'Animals_cont.s','Area.s','Depth.s',"Aquatic_500.s",  
+            "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+            "Urban_500.s", "natural_5_filled.s","MeanT.s","sum_P.s", "post_Emerse_pond.s")] <-scale(season_mean_df[,c(
+                    'Animals_cont.t','Area.t','Depth.t',"Aquatic_500.t",  
+                    "Cropland_500.t","Forest_500.t","Pastures.and.open.nature_500.t" ,
+                    "Urban_500.t", "natural_5_filled.t","MeanT.t","sum_P.t","post_Emerse_pond.t")], center = TRUE, scale = TRUE)
+
+season_mean_df <- merge(season_mean_df,dom_landcover_nov[,c('PondCode','Pondscape')],by='PondCode',all.x=T)
+#write.csv(season_mean_df,paste0(data_dir,'FINAL_ponderful_hydro_seasonality_glmm.csv'))
+```
+
+
+#############UNTIL HERE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+#LU variables
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_DATA/'
+
+LU5 <- read.csv(paste0(data_dir,'ponderful_DATA_updated/D2.4_LandUse_5m_20240516.csv'), header=T, sep = ",")
+
+
+# Land use 5m (field data)
+LU5$PondCode <- toupper(LU5$PondCode)
+#LU5$Natural_5 = LU5$Moorland + LU5$Rank_veg + LU5$Woodland + LU5$Marsh + LU5$Other
+
+LU5$AssessmentDate <- as.Date(LU5$AssessmentDate, format = "%d/%m/%Y")
+LU5$year <- format(LU5$AssessmentDate, "%Y")
+
+# 
+# model_df_nonna <- merge(model_df_nonna, LU5[,c("Unimp_grassland", "Semimp_grassland",
+#                                    "Imp_grassland","Arable","Urban" ,
+#                                    "Rock","Marsh", "Streams")],
+#       on=c('PondCode','year'))
+```
+
+
+
+
+```{r Depth missing values}
+length(unique(glmm_df$PondCode)) #240
+
+#dealing with missing depth
+glmm_df_depth_nonna <- glmm_df[!is.na(glmm_df$Depth.s),] #721 rows 
+table(glmm_df_depth_nonna$Country)
+
+setdiff(unique(model_df$PondCode),unique(glmm_df_depth_nonna$PondCode)) #239
+unique(glmm_df[is.na(glmm_df$Depth.s),'PondCode'])
+table(glmm_df[is.na(glmm_df$Depth.s),'Country'])
+
+#other missing data
+glmm_df_depth_nonna[!rownames(glmm_df_depth_nonna) %in% rownames(na.omit(glmm_df_depth_nonna)),]
+
+#populate natural_5m, 
+```
+
+```{r populate natural col}
+glmm_df_depth_nonna <- glmm_df_depth_nonna %>%
+  group_by(PondCode, year, season_col) %>% 
+  mutate(
+    natural_5_filled.s = ifelse(is.na(Natural_5.s), 
+                           ifelse(n_distinct(Natural_5.s[!is.na(Natural_5.s)]) == 1, unique(nature[!is.na(Natural_5.s)]), 
+                                  ifelse(n_distinct(Natural_5.s[!is.na(Natural_5.s)]) > 1, 
+                                         as.character(PondCode), NA)), 
+                           Natural_5.s)
+  ) %>%
+  ungroup() %>%
+  group_by(PondCode) %>%
+  mutate(
+    natural_5_filled.s = ifelse(is.na(natural_5_filled.s), 
+                           ifelse(n_distinct(natural_5_filled.s[!is.na(natural_5_filled.s)]) == 1, unique(natural_5_filled.s[!is.na(natural_5_filled.s)]), 
+                                  ifelse(n_distinct(natural_5_filled.s[!is.na(natural_5_filled.s)]) > 1, 
+                                         as.character(PondCode), NA)), 
+                           natural_5_filled.s)
+  ) %>%
+  ungroup()
+
+# View result
+print(glmm_df_depth_nonna)
+
+
+glmm_df_depth_nonna[is.na(glmm_df_depth_nonna$natural_5_filled.s),]#missing SCL1 in both years 
+
+
+#Get the table with non-missing values in depth and natural(populated)
+glmm_df_depth_natural <- glmm_df_depth_nonna[!is.na(glmm_df_depth_nonna$natural_5_filled.s),]#718
+
+
+glmm_df_depth_natural[is.na(glmm_df_depth_natural$Strat),]#36 
+#check correlation
+glmm_df_depth_natural_nonna <-  glmm_df_depth_natural[!is.na(glmm_df_depth_natural$Strat),] #682
+
+write.csv(glmm_df_depth_natural_nonna, paste0(data_dir,'glmm_strata_natural_5_filleds.csv'))
+
+```
+

@@ -1,0 +1,244 @@
+---
+title: "sludge modelling"
+author: "Jing"
+date: "2025-04-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+data_dir <- '/Users/lidiayung/PhD_project/project_PONDERFUL/ponderful_OUTPUT/ponderful_seasonility/'
+model_df_valid <- read.csv(paste0(data_dir,'ponderful_hydro_seasonality_glmm.csv'))
+```
+
+```{r}
+model_df_valid <- model_df_valid %>%
+  group_by(PondCode, year, season_col) %>% 
+  mutate(
+    natural_5_filled = ifelse(is.na(Natural_5), 
+                           ifelse(n_distinct(Natural_5[!is.na(Natural_5)]) == 1, unique(nature[!is.na(Natural_5)]), 
+                                  ifelse(n_distinct(Natural_5[!is.na(Natural_5)]) > 1, 
+                                         as.character(PondCode), NA)), 
+                           Natural_5)
+  ) %>%
+  ungroup() %>%
+  group_by(PondCode) %>%
+  mutate(
+    natural_5_filled = ifelse(is.na(natural_5_filled), 
+                           ifelse(n_distinct(natural_5_filled[!is.na(natural_5_filled)]) == 1, unique(natural_5_filled[!is.na(natural_5_filled)]), 
+                                  ifelse(n_distinct(natural_5_filled[!is.na(natural_5_filled)]) > 1, 
+                                         as.character(PondCode), NA)), 
+                           natural_5_filled)
+  ) %>%
+  ungroup()
+
+# View result
+print(model_df_valid)
+```
+
+```{r}
+model_df_sludge <- model_df_valid[!is.na(model_df_valid$Sludge),]
+dim(model_df_sludge)
+```
+
+
+```{r Prep, echo=FALSE}
+#Factors
+##Country as factors
+model_df_sludge$Country <- as.factor(model_df_sludge$Country)
+levels(model_df_sludge$Country)
+
+
+## Bio climatic regions
+model_df_sludge$Country <- as.character(model_df_sludge$Country)
+
+# Initialize altregion as a copy of Country
+model_df_sludge$altregion <- model_df_sludge$Country
+
+model_df_sludge[model_df_sludge$Country %in% c('Belgium', 'Denmark', 'UK'), "altregion"] <- 'Atlantic'
+model_df_sludge[model_df_sludge$Country %in% c('Switzerland','Germany'), "altregion"] <- 'Temperate'
+
+# Check the changes
+table(model_df_sludge$altregion)
+
+##Factors and transformation 
+model_df_sludge$altregion <- as.factor(model_df_sludge$altregion)
+levels(model_df_sludge$altregion)
+
+#Adding log_TN (and log_TP)
+model_df_sludge$log_TN <- log(model_df_sludge$TN,base=10)
+hist(model_df_sludge$log_TN)
+shapiro.test(model_df_sludge$log_TN)
+
+model_df_sludge$log_TP <- log(model_df_sludge$TP,base=10)
+hist(model_df_sludge$log_TP)
+shapiro.test(model_df_sludge$log_TP)
+```
+
+```{r bestNormalize}
+library(bestNormalize)
+
+#Depth
+shapiro.test(model_df_sludge$Depth)
+Depthn <- bestNormalize(model_df_sludge$Depth)
+plot(Depthn, leg_loc = "bottomright")
+model_df_sludge$Depth.t <- predict(orderNorm(model_df_sludge$Depth))
+hist(model_df_sludge$Depth.t)
+shapiro.test(model_df_sludge$Depth.t)
+
+#Animals_cont  skew
+shapiro.test(model_df_sludge$Animals_cont)
+Animals_contn <- bestNormalize(model_df_sludge$Animals_cont)
+plot(Animals_contn, leg_loc = "bottomright")
+model_df_sludge$Animals_cont.t <- predict(orderNorm(model_df_sludge$Animals_cont))
+hist(model_df_sludge$Animals_cont.t)
+shapiro.test(model_df_sludge$Animals_cont.t)
+
+#MeanT
+shapiro.test(model_df_sludge$MeanT)
+MeanT <- bestNormalize(model_df_sludge$MeanT)
+plot(MeanT, leg_loc = "bottomright")
+model_df_sludge$MeanT.t <- predict(orderNorm(model_df_sludge$MeanT))
+hist(model_df_sludge$MeanT.t)
+shapiro.test(model_df_sludge$MeanT.t)
+
+#sum_P
+shapiro.test(model_df_sludge$sum_P)
+sum_P <- bestNormalize(model_df_sludge$sum_P)
+plot(sum_P, leg_loc = "bottomright")
+model_df_sludge$sum_P.t <- predict(orderNorm(model_df_sludge$sum_P))
+hist(model_df_sludge$sum_P.t)
+shapiro.test(model_df_sludge$sum_P.t)
+
+
+#Sludge
+shapiro.test(model_df_sludge$Sludge)
+Sludge <- bestNormalize(model_df_sludge$Sludge)
+plot(Sludge, leg_loc = "bottomright")
+model_df_sludge$Sludge.t <- predict(orderNorm(model_df_sludge$Sludge))
+hist(model_df_sludge$Sludge.t)
+shapiro.test(model_df_sludge$Sludge.t)
+```
+```{r Quantile transformation}
+transformar_columna <- function(x) {
+  perc <- rank(x, na.last = "keep") / (sum(!is.na(x)) + 1)  # Calcular los percentiles manteniendo los NA
+  result <- ifelse(!is.na(x), qnorm(perc), NA)  # Transformar los percentiles a la distribución normal, manteniendo los NA
+  return(result)}
+
+#Natural_5, Aquatic_500,Cropland_500,Forest_500,Pastures.and.open.nature_500,Urban_500
+model_df_sludge$natural_5_filled.t<-transformar_columna(model_df_sludge$natural_5_filled)
+model_df_sludge$Aquatic_500.t<-transformar_columna(model_df_sludge$Aquatic_500)
+model_df_sludge$Cropland_500.t<-transformar_columna(model_df_sludge$Cropland_500)
+model_df_sludge$Pastures.and.open.nature_500.t<-transformar_columna(model_df_sludge$Pastures.and.open.nature_500)
+model_df_sludge$Urban_500.t<-transformar_columna(model_df_sludge$Urban_500)
+model_df_sludge$Forest_500.t<-transformar_columna(model_df_sludge$Forest_500)
+model_df_sludge$post_Emerse_pond.t<-transformar_columna(model_df_sludge$post_Emerse_pond)
+```
+
+
+```{r Scale}
+model_df_sludge[,c('Animals_cont.s','Depth.s',"Aquatic_500.s",  
+            "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+            "Urban_500.s", "Natural_5_filled.s","MeanT.s","sum_P.s", "post_Emerse_pond.s","Sludge.s")] <-scale(model_df_sludge[,c(
+                    'Animals_cont.t','Depth.t',"Aquatic_500.t",  
+                    "Cropland_500.t","Forest_500.t","Pastures.and.open.nature_500.t" ,
+                    "Urban_500.t", "natural_5_filled.t","MeanT.t","sum_P.t","post_Emerse_pond.t","Sludge.t")], center = TRUE, scale = TRUE)
+
+
+
+model_df_sludge_nonna <- model_df_sludge[,c("Pond_ID" ,"PondCode","season_col","year","Country",
+                             "Strat","Pond_dries","log_TN","log_TP",'Sludge.s','Animals_cont.s','Depth.s',
+                             "Aquatic_500.s",
+                             "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+                             "Urban_500.s", "Natural_5_filled.s","MeanT.s","sum_P.s","post_Emerse_pond.s")]
+
+model_df_sludge_nonna <- na.omit(model_df_sludge_nonna)
+```
+
+```{r corr}
+library(corrplot)
+corrplot(cor(na.omit(model_df_sludge_nonna[,c("log_TN","log_TP",
+                                              'Sludge.s','Animals_cont.s',
+                                            'Depth.s',"Aquatic_500.s",
+                                      "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+                                            "Urban_500.s", "Natural_5_filled.s","MeanT.s","sum_P.s")])), 
+         type = "upper", order = "hclust",tl.col ="black", tl.srt = 45 )
+
+
+
+round(cor(na.omit(model_df_sludge_nonna[,c("log_TN","log_TP",'Sludge.s',
+                                           'Animals_cont.s',
+                                            'Depth.s',"Aquatic_500.s",
+                                            "Cropland_500.s","Forest_500.s","Pastures.and.open.nature_500.s" ,
+                                            "Urban_500.s", "Natural_5_filled.s","MeanT.s","sum_P.s")])),2)
+```
+
+
+```{r GLMM TN}
+library(lmerTest)
+library(sjPlot)
+table(is.na(model_df_sludge$Depth))
+colSums(is.na(model_df_sludge_nonna))
+
+table(model_df_sludge_nonna$Pond_dries_cat)
+
+model_df_sludge_nonna$Pond_dries <- as.factor(model_df_sludge_nonna$Pond_dries)
+model_df_sludge_nonna[model_df_sludge_nonna$Pond_dries == '0','Pond_dries_cat'] = 'Permernant'
+model_df_sludge_nonna[model_df_sludge_nonna$Pond_dries == '1','Pond_dries_cat'] = 'Semi-P'
+model_df_sludge_nonna[model_df_sludge_nonna$Pond_dries == '2','Pond_dries_cat'] = 'Temporary'
+
+model_df_sludge_nonna$year <- as.factor(model_df_sludge_nonna$year)
+```
+```{r}
+
+dom_landcover_nov <- read.csv('~/PhD_project/project_PONDERFUL/ponderful_DATA/ponderful_DATA_updated/PhyChe_XY_landcover_nov.txt')
+
+dom_landcover_nov$PondCode <- toupper(dom_landcover_nov$PondCode)
+
+model_df_sludge_nonna <- merge(model_df_sludge_nonna,dom_landcover_nov[,c('PondCode','Pondscape')],
+                               by='PondCode',all.x=T)
+
+```
+
+
+```{r}
+
+sludge_tn_glmm <- lmer(
+  formula = log_TN ~ season_col * Sludge.s+(1 | PondCode), data = model_df_sludge_nonna, na.action = "na.fail")
+
+step(sludge_tn_glmm)
+
+
+sludge_tn_glmm <- lmer(
+  formula = log_TN ~ year+ season_col * Sludge.s+(1 | PondCode)+ (1 | Country:Pondscape)+ (1 | Country), data = model_df_sludge_nonna, na.action = "na.fail")
+
+step(sludge_tn_glmm)
+tab_model(sludge_tn_glmm,transform=NULL,show.intercept = TRUE)
+
+sludge_tp_glmm <- lmer(
+  formula = log_TP ~ year+ season_col * Sludge.s+(1 | PondCode)+ (1 | Country:Pondscape)+ (1 | Country), data = model_df_sludge_nonna, na.action = "na.fail")
+
+step(sludge_tp_glmm)
+
+```
+
+
+
+```{r}
+sludge_tp_glmm <- lmer(
+  formula = log_TP ~ season_col * Sludge.s+(1 | PondCode), data = model_df_sludge_nonna, na.action = "na.fail")
+tab_model(sludge_tp_glmm,transform=NULL,show.intercept = TRUE)
+step(sludge_tp_glmm)
+
+sludge_tp_glmm <- lmer(
+  formula = log_TP ~ year+ season_col * Sludge.s+(1 | PondCode)+ (1 | Country:Pondscape)+ (1 | Country), data = model_df_sludge_nonna, na.action = "na.fail")
+
+step(sludge_tp_glmm)
+
+```
+
+
